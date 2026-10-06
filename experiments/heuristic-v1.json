@@ -1,0 +1,13 @@
+{
+  "rule_id": "goal-length-v1",
+  "input": "Nonempty task description string only",
+  "feature": "len(goal.split())",
+  "max_words": 100,
+  "at_or_below_threshold": "deepseek",
+  "above_threshold": "sol",
+  "invalid_input": "Raise ValueError for blank or non-string input",
+  "rationale": "One feature and an arbitrary round threshold form a simple baseline, not a tuned complexity classifier.",
+  "freeze": "Chosen before scoring this rule, after the lead had seen prior aggregate results. Keep 100 fixed even if replay results are poor.",
+  "evaluation": "Pilot replay is exploratory. Do not train or tune on WorkArena outcomes. The implementation used no actual task goals or outcomes.",
+  "excluded_inputs": ["task ID", "level", "category", "outcome", "cost", "environment", "grader"]
+}
