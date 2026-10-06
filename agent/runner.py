@@ -20,6 +20,7 @@ Use the element IDs in that tree. Check the next observation after each action.
 )
 
 INSTANCE_POLICY = "shared-task-instance-v1"
+FORMAT_FALLBACK_STRATEGY_ID = "format-fallback-v1"
 
 
 class InstanceMismatchError(RuntimeError):
@@ -129,6 +130,25 @@ def make_env(task: dict):
     )
 
 
+def model_totals():
+    return dict.fromkeys(
+        (
+            "input_tokens",
+            "output_tokens",
+            "cache_hit_tokens",
+            "cache_miss_tokens",
+            "cache_write_tokens",
+            "reasoning_tokens",
+            "cost_usd",
+            "uncertain_cost_usd",
+            "model_latency_seconds",
+            "browser_actions",
+            "model_calls",
+        ),
+        0,
+    )
+
+
 def run_task(
     task: dict,
     client,
@@ -137,38 +157,53 @@ def run_task(
     max_actions: int = 30,
     timeout_seconds: float = 600,
     env_factory=None,
+    fallback_client=None,
 ) -> dict:
     """Save each event before the next operation. Always close the environment."""
     if max_actions < 1 or not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
         raise ValueError("Action and time limits must be positive.")
+    budget = getattr(client, "budget", None)
+    if fallback_client is not None:
+        if budget is None or getattr(fallback_client, "budget", None) is not budget:
+            raise ValueError("Both clients must share the same budget.")
+        if (
+            client.config["model"] != "deepseek-flash"
+            or fallback_client.config["model"] != "gpt-6.1-sol"
+        ):
+            raise ValueError("Format fallback must run DeepSeek then Sol.")
     output_dir.mkdir(parents=True, exist_ok=False)
     redactor = Redactor()
     start = time.monotonic()
     result = {
         **task,
-        "model": client.config["model"],
+        "model": (
+            f"{client.config['model']}->{fallback_client.config['model']}"
+            if fallback_client is not None
+            else client.config["model"]
+        ),
+        "strategy_id": FORMAT_FALLBACK_STRATEGY_ID
+        if fallback_client is not None
+        else "single-model-v1",
+        "fallback_config": fallback_client.config if fallback_client is not None else None,
+        "fallback_triggered": False,
+        "fallback_trigger_turn": None,
+        "fallback_used": False,
+        "fallback_call_turn": None,
         "status": "infrastructure_error",
         "success": None,
         "stop_reason": "setup_error",
         "reward": None,
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "cache_hit_tokens": 0,
-        "cache_miss_tokens": 0,
-        "cache_write_tokens": 0,
-        "reasoning_tokens": 0,
-        "cost_usd": 0.0,
-        "uncertain_cost_usd": 0.0,
-        "model_latency_seconds": 0.0,
-        "browser_actions": 0,
-        "model_calls": 0,
+        **model_totals(),
         "max_actions": max_actions,
         "timeout_seconds": timeout_seconds,
         "instance_policy": INSTANCE_POLICY,
         "instance_hosts_match": None,
+        "by_model": {
+            c.config["model"]: model_totals() for c in (client, fallback_client) if c is not None
+        },
     }
     env = None
-    budget = getattr(client, "budget", None)
+    active = client
     initial_spend = budget.spent_usd if budget else 0.0
     initial_uncertain = budget.uncertain_usd if budget else 0.0
     with (output_dir / "trace.jsonl").open("x", encoding="utf-8") as trace:
@@ -179,7 +214,53 @@ def run_task(
             )
             trace.flush()
 
-        emit("start", task=task, model_config=client.config, system_prompt=SYSTEM_PROMPT)
+        def complete(messages, turn):
+            stats = result["by_model"][active.config["model"]]
+            before_spend = budget.spent_usd if budget else 0
+            before_uncertain = budget.uncertain_usd if budget else 0
+            for totals in (result, stats):
+                totals["model_calls"] += 1
+            try:
+                response = active.complete(messages)
+            except BudgetExceeded:
+                for totals in (result, stats):
+                    totals["model_calls"] -= 1
+                raise
+            except ProviderError as exc:
+                for totals in (result, stats):
+                    totals["model_latency_seconds"] += exc.record.get("latency_seconds", 0)
+                    if not budget:
+                        totals["cost_usd"] += exc.record.get("cost_usd", 0)
+                raise
+            else:
+                for totals in (result, stats):
+                    totals["model_latency_seconds"] += response.latency_seconds
+                    if not budget:
+                        totals["cost_usd"] += response.cost_usd
+                    for key, value in asdict(response.usage).items():
+                        if key in {"reasoning_tokens", "cache_write_tokens"} and value is None:
+                            totals[key] = None
+                        elif key in totals and value is not None and totals[key] is not None:
+                            totals[key] += value
+                return response
+            finally:
+                if budget:
+                    stats["cost_usd"] += budget.spent_usd - before_spend
+                    stats["uncertain_cost_usd"] += budget.uncertain_usd - before_uncertain
+                if active is fallback_client and stats["model_calls"] > 0:
+                    if not result["fallback_used"]:
+                        result["fallback_call_turn"] = turn
+                        emit("fallback_call", turn=turn, model=active.config["model"])
+                    result["fallback_used"] = True
+
+        emit(
+            "start",
+            task=task,
+            model_config=client.config,
+            system_prompt=SYSTEM_PROMPT,
+            strategy_id=result["strategy_id"],
+            fallback_config=result["fallback_config"],
+        )
         try:
             env = (env_factory or make_env)(task)
             obs, _ = env.reset(seed=task["seed"])
@@ -197,16 +278,8 @@ def run_task(
                     result["stop_reason"] = "timeout"
                     break
                 messages.append({"role": "user", "content": json.dumps(view, ensure_ascii=False)})
-                result["model_calls"] += 1
-                response = client.complete(messages)
-                emit("model_response", turn=turn, **asdict(response))
-                result["cost_usd"] += response.cost_usd
-                result["model_latency_seconds"] += response.latency_seconds
-                for key, value in asdict(response.usage).items():
-                    if key in {"reasoning_tokens", "cache_write_tokens"} and value is None:
-                        result[key] = None
-                    elif key in result and value is not None and result[key] is not None:
-                        result[key] += value
+                response = complete(messages, turn)
+                emit("model_response", turn=turn, model=active.config["model"], **asdict(response))
                 if response.finish_reason != "stop":
                     result["stop_reason"] = "incomplete_response"
                     if response.finish_reason != "length":
@@ -217,13 +290,29 @@ def run_task(
                     action = parse_action(response.content)
                 except ValueError as exc:
                     result["stop_reason"] = "invalid_action"
-                    emit("action_error", turn=turn, error=str(exc))
+                    emit("action_error", turn=turn, model=active.config["model"], error=str(exc))
+                    if fallback_client is not None and active is client:
+                        result["fallback_triggered"] = True
+                        result["fallback_trigger_turn"] = turn
+                        if turn + 1 < max_actions and time.monotonic() - start < timeout_seconds:
+                            emit(
+                                "handoff",
+                                source_model=active.config["model"],
+                                target_model=fallback_client.config["model"],
+                                reason="invalid_action",
+                                turn=turn,
+                                next_turn=turn + 1,
+                            )
+                            active = fallback_client
+                            result["stop_reason"] = "action_limit"
+                            continue
                     break
                 if action is None:
                     result["stop_reason"] = "agent_stop"
                     break
-                emit("action", turn=turn, action=action)
+                emit("action", turn=turn, model=active.config["model"], action=action)
                 result["browser_actions"] += 1
+                result["by_model"][active.config["model"]]["browser_actions"] += 1
                 obs, reward, terminated, truncated, _ = env.step(action)
                 result["reward"] = float(reward)
                 emit(
@@ -244,14 +333,11 @@ def run_task(
             else:
                 emit("observation", turn=max_actions, observation=observation_text(obs))
         except BudgetExceeded:
-            result["model_calls"] -= 1
             result.update(status="budget_stopped", success=None, stop_reason="budget")
-            emit("error", error_type="BudgetExceeded")
+            emit("error", model=active.config["model"], error_type="BudgetExceeded")
         except ProviderError as exc:
             result.update(status="provider_error", success=None, stop_reason="provider_error")
-            result["cost_usd"] += exc.record.get("cost_usd", 0.0)
-            result["model_latency_seconds"] += exc.record.get("latency_seconds", 0.0)
-            emit("error", **exc.record)
+            emit("error", model=active.config["model"], **exc.record)
         except (KeyboardInterrupt, Exception) as exc:
             result.update(
                 status="infrastructure_error", success=None, stop_reason="environment_error"
@@ -259,7 +345,12 @@ def run_task(
             result["error_type"] = type(exc).__name__
             result["error_http_status"] = http_status(exc)
             # Exception messages can contain private instance credentials.
-            emit("error", error_type=type(exc).__name__, http_status=http_status(exc))
+            emit(
+                "error",
+                model=active.config["model"],
+                error_type=type(exc).__name__,
+                http_status=http_status(exc),
+            )
             if isinstance(exc, InstanceMismatchError):
                 result["stop_reason"] = "instance_mismatch"
             if isinstance(exc, KeyboardInterrupt):
