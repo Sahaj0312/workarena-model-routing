@@ -1,4 +1,5 @@
 context.txt
+/learnings.txt
 .env
 .env.*
 !.env.example

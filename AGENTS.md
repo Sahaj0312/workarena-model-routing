@@ -11,3 +11,5 @@
 - Run offline tests before live checks. Live model calls cost money; stay within the user's approved scope and budget.
 - The user has authorized regular commits and pushes to the existing GitHub repository. Push small, coherent changes after lead review and relevant checks. Never include secrets or raw traces.
 - Publish a results report or choose a project license only when the user explicitly asks.
+- Keep frequent, short research checkpoints in the ignored root `learnings.txt`. Record decisions, checks, results, and unresolved issues as they occur. Use simple language and an America/Toronto timestamp with its UTC offset.
+- For past events, use a known source timestamp or mark the entry as a retrospective recorded now with the event time unknown. Do not invent times. Keep secrets and managed instance hosts out of the log.
