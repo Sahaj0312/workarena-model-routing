@@ -2,8 +2,9 @@
 
 Measure whether a cheap browser agent can complete enterprise tasks at low cost.
 Run DeepSeek Flash and GPT-6.1 Sol on official WorkArena instances with the same
-agent, task IDs, and seeds, then compare outcomes and costs. There is no router
-or training pipeline yet.
+agent, task IDs, and seeds, then compare outcomes and costs. Offline analysis
+includes a fixed description-only routing rule and a hindsight cost frontier.
+There is no training pipeline.
 
 ## Setup
 
@@ -129,6 +130,41 @@ the earlier runner without this fix are invalid for model comparisons; exclude
 all of them, including reported successes. Keep their traces and costs, then
 run the full fixed L2 subset again after the fix. A cleanup error also stops
 the batch and remains visible in the result.
+
+## Offline routing analysis
+
+These commands use saved results only. They do not call model APIs or run a
+browser. Keep their outputs under the ignored `results/` directory.
+
+The frozen rule `goal-length-v1` selects DeepSeek for goals with at most 100
+whitespace-separated words and Sol for longer goals. Blank or non-string goals
+are rejected. The threshold is an arbitrary baseline, not a difficulty model.
+It was fixed before replay scoring, after aggregate baseline results were known.
+Do not tune it on these outcomes.
+
+First save choices without scoring them. The canonical input is the first saved
+DeepSeek goal for each task/seed pair. The plan records choices, goal hashes,
+word counts, source hashes, and the rule hash; it does not store raw goals.
+
+```sh
+uv run python -m analysis.routing plan --paired-summary results/sol-deepseek-paired-summary.json --output results/routing-plan
+uv run python -m analysis.routing score --paired-summary results/sol-deepseek-paired-summary.json --plan results/routing-plan/plan.json --output results/routing-score
+```
+
+Review the saved plan before the score step. Scoring checks its checksum and
+source files. It writes `metrics.json`, `frontier.json`, and `frontier.csv` to a
+new directory. The metrics compare the fixed rule with always choosing either
+model. The frontier finds the cheapest observed choice for each success target;
+it knows both outcomes in advance and pays for one run on every pair, including
+pairs where both models failed.
+
+This is exploratory replay, not a live router test or a blind study. Paired runs
+can have different generated goal text. Results therefore include a separate
+exact-goal subset; that subset is descriptive and is not an
+unbiased sample. Even equal goals do not ensure equal live service state. Costs
+reuse observed API estimates, exclude routing overhead, smoke, and interrupted
+attempts, and do not predict a new cache schedule. The hindsight frontier is a
+theoretical bound on these saved runs, not a deployable router.
 
 ## Data and development
 

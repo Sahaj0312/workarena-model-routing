@@ -22,7 +22,7 @@ workarena-baseline = "experiments.cli:main"
 dev = ["pytest>=8,<9", "ruff>=0.11,<1"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["agent", "models", "experiments", "routers"]
+packages = ["agent", "models", "experiments", "routers", "analysis"]
 
 [tool.ruff]
 line-length = 100
