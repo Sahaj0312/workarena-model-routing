@@ -25,7 +25,8 @@ DEEPSEEK_API_KEY=your_api_key
 OPENAI_API_KEY=your_api_key
 ```
 
-The selected provider account needs credit. Only that provider's API key is required.
+The selected provider account needs credit. A standalone baseline needs only
+that provider's API key. Format fallback requires both provider keys.
 Remove old `SNOW_INSTANCE_URL`, `SNOW_INSTANCE_UNAME`, `SNOW_INSTANCE_PWD`, and
 `SNOW_INSTANCE_POOL` settings when using the official managed pool. See the
 [WorkArena setup guide](https://github.com/ServiceNow/WorkArena#getting-started).
@@ -165,6 +166,40 @@ unbiased sample. Even equal goals do not ensure equal live service state. Costs
 reuse observed API estimates, exclude routing overhead, smoke, and interrupted
 attempts, and do not predict a new cache schedule. The hindsight frontier is a
 theoretical bound on these saved runs, not a deployable router.
+
+## Format fallback
+
+`format-fallback-v1` is implemented and tested offline. It has no live results.
+The [policy](experiments/format-fallback-v1.json) records the fixed protocol;
+it is a specification, not a runtime configuration file.
+
+Each task starts with DeepSeek. If its response ends with `finish_reason="stop"`
+but the strict action parser rejects it, the next available turn uses Sol.
+The invalid reply stays in the full message history. Sol continues with the
+same browser state and observation, without an extra correction prompt. It
+does not restart the task or switch back to DeepSeek.
+
+Both providers share one budget and the original total turn and time limits.
+The invalid DeepSeek reply uses one turn and its API cost. No extra turn is
+added. A valid stop action, output exhaustion, provider error, budget stop, or
+environment error does not trigger fallback. An invalid Sol reply ends the
+attempt under the normal failure rule.
+
+`--fallback-sol` is valid only with `--provider deepseek`, which is the default.
+Both keys are checked before environment setup. The flag also works with
+`preflight` to check both keys. After separate approval for a live run and its
+budget, replace `APPROVED_USD` in this example with that limit:
+
+```sh
+uv run workarena-baseline run --fallback-sol --manifest experiments/smoke.json --output results/format-fallback-smoke --budget-usd APPROVED_USD
+```
+
+This example has not been run. Batch records include both provider settings
+and the policy file hash. Run records include per-model usage and the handoff
+event. Summaries separate tasks that triggered fallback, tasks that made a Sol
+call, and the number of Sol calls. A trigger on the last turn, or before a
+budget stop, can produce no Sol call. Baselines remain separate and unchanged.
+Static saved-run replay cannot measure whether this handoff recovers a task.
 
 ## Data and development
 

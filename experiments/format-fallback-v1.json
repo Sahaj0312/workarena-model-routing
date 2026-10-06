@@ -1,0 +1,29 @@
+{
+  "strategy_id": "format-fallback-v1",
+  "status": "Implemented for offline tests; not measured in a live run",
+  "starting_provider": "deepseek",
+  "fallback_provider": "sol",
+  "trigger": "DeepSeek finish_reason is stop and the unchanged parse_action function raises ValueError",
+  "transition": "Switch once on the next available model turn; do not switch back",
+  "history": "Keep the invalid assistant reply, full shared message history, and current observation; add no correction prompt",
+  "environment": "Continue in the same browser environment without reset or executing the invalid reply",
+  "limits": {
+    "default_total_model_turns": 30,
+    "default_task_timeout_seconds": 600,
+    "budget": "Both clients use the same Budget object",
+    "failed_reply": "Uses one turn and its reported or reserved API cost",
+    "extra_turns": 0
+  },
+  "no_fallback_for": [
+    "Valid stop action",
+    "Output exhaustion or other non-stop finish reason",
+    "Provider error",
+    "Budget stop",
+    "Environment error",
+    "Invalid Sol action"
+  ],
+  "records": "Record the trigger separately from an actual Sol call, plus per-model calls, actions, tokens, latency, and cost",
+  "scope": "Every new task starts with DeepSeek; the default standalone baselines remain unchanged",
+  "evaluation": "No training or tuning on WorkArena outcomes. Offline tests do not establish dynamic recovery performance.",
+  "configuration": "This file documents the protocol; it is not a runtime configuration. The batch records its SHA256."
+}

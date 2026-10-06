@@ -10,6 +10,7 @@ import os
 import random
 import subprocess
 import sys
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -99,7 +100,17 @@ def create_manifest(seed):
     }
 
 
-def preflight(check_access, provider="deepseek"):
+def validate_fallback(provider, enabled):
+    if not enabled:
+        return
+    if provider != "deepseek":
+        raise ValueError("Sol fallback requires DeepSeek as the starting provider.")
+    if any(not os.getenv(name, "").strip() for name in API_KEY_NAMES.values()):
+        raise ValueError("Sol fallback requires both provider API keys.")
+
+
+def preflight(check_access, provider="deepseek", fallback_sol=False):
+    validate_fallback(provider, fallback_sol)
     import browsergym.workarena  # noqa: F401
     from playwright.sync_api import sync_playwright
 
@@ -108,6 +119,8 @@ def preflight(check_access, provider="deepseek"):
         "HF_TOKEN": bool(os.getenv("HF_TOKEN")),
         API_KEY_NAMES[provider]: bool(os.getenv(API_KEY_NAMES[provider])),
     }
+    if fallback_sol:
+        checks["OPENAI_API_KEY"] = bool(os.getenv("OPENAI_API_KEY"))
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page()
@@ -138,6 +151,13 @@ def summarize(path):
         "cost_usd": cost,
         "average_cost_usd": cost / len(runs) if runs else None,
         "cost_per_success_usd": cost / successes if successes else None,
+        "fallback_triggered_tasks": sum(r.get("fallback_triggered", False) for r in runs),
+        "fallback_used_tasks": sum(r.get("fallback_used", False) for r in runs),
+        "fallback_model_calls": sum(
+            r.get("by_model", {}).get("gpt-6.1-sol", {}).get("model_calls", 0)
+            for r in runs
+            if r.get("fallback_config") is not None
+        ),
         "cache_write_tokens": sum(r["cache_write_tokens"] for r in runs)
         if all(r.get("cache_write_tokens") is not None for r in runs)
         else None,
@@ -160,12 +180,15 @@ def summarize(path):
 
 
 def run(args):
-    from agent.runner import INSTANCE_POLICY, run_task
+    from agent.runner import FORMAT_FALLBACK_STRATEGY_ID, INSTANCE_POLICY, run_task
     from models.common import Budget
 
-    if args.provider == "sol":
+    fallback_sol = getattr(args, "fallback_sol", False)
+    validate_fallback(args.provider, fallback_sol)
+    if args.provider == "sol" or fallback_sol:
         from models.sol import SolClient
 
+    if args.provider == "sol":
         client_type = SolClient
     else:
         from models.deepseek import DeepSeekClient
@@ -184,48 +207,66 @@ def run(args):
     if len({(t["task_id"], t["seed"]) for t in tasks}) != len(tasks):
         raise ValueError("The manifest has duplicate task and seed pairs.")
     budget = Budget(args.budget_usd)
-    client = client_type(os.environ.get(API_KEY_NAMES[args.provider], ""), budget)
-    args.output.mkdir(parents=True, exist_ok=False)
-    batch = {
-        "started_at": datetime.now(UTC).isoformat(),
-        "provenance": provenance(),
-        "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
-        "tasks": tasks,
-        "model_config": client.config,
-        "provider": args.provider,
-        "budget_usd": args.budget_usd,
-        "max_actions": args.max_actions,
-        "timeout_seconds": args.timeout_seconds,
-        "instance_policy": INSTANCE_POLICY,
-    }
-    write_json(args.output / "batch.json", batch)
-    try:
-        for index, task in enumerate(tasks):
-            result = run_task(
-                task,
-                client,
-                args.output / f"{index:03d}",
-                max_actions=args.max_actions,
-                timeout_seconds=args.timeout_seconds,
+    with ExitStack() as clients:
+        client = client_type(os.environ.get(API_KEY_NAMES[args.provider], ""), budget)
+        clients.callback(client.close)
+        task_options = {}
+        fallback_client = None
+        if fallback_sol:
+            fallback_client = SolClient(os.environ["OPENAI_API_KEY"], budget)
+            clients.callback(fallback_client.close)
+            task_options["fallback_client"] = fallback_client
+        args.output.mkdir(parents=True, exist_ok=False)
+        batch = {
+            "started_at": datetime.now(UTC).isoformat(),
+            "provenance": provenance(),
+            "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+            "tasks": tasks,
+            "model_config": client.config,
+            "provider": args.provider,
+            "budget_usd": args.budget_usd,
+            "max_actions": args.max_actions,
+            "timeout_seconds": args.timeout_seconds,
+            "instance_policy": INSTANCE_POLICY,
+        }
+        if fallback_client is not None:
+            policy = ROOT / "experiments/format-fallback-v1.json"
+            batch.update(
+                strategy_id=FORMAT_FALLBACK_STRATEGY_ID,
+                fallback_config=fallback_client.config,
+                fallback_policy=str(policy.relative_to(ROOT)),
+                fallback_policy_sha256=hashlib.sha256(policy.read_bytes()).hexdigest(),
             )
-            print(
-                f"{index + 1}/{len(tasks)} {task['task_id']}: {result['status']} "
-                f"(${result['cost_usd']:.4f})",
-                flush=True,
-            )
-            if result["status"] not in {"success", "task_failure"} or result.get("cleanup_error"):
-                break
-    finally:
-        client.close()
-        batch.update(
-            spent_usd=budget.spent_usd,
-            uncertain_usd=budget.uncertain_usd,
-            finished_at=datetime.now(UTC).isoformat(),
-        )
         write_json(args.output / "batch.json", batch)
-        summary = summarize(args.output)
-        write_json(args.output / "summary.json", summary)
-        print(json.dumps(summary, indent=2))
+        try:
+            for index, task in enumerate(tasks):
+                result = run_task(
+                    task,
+                    client,
+                    args.output / f"{index:03d}",
+                    max_actions=args.max_actions,
+                    timeout_seconds=args.timeout_seconds,
+                    **task_options,
+                )
+                print(
+                    f"{index + 1}/{len(tasks)} {task['task_id']}: {result['status']} "
+                    f"(${result['cost_usd']:.4f})",
+                    flush=True,
+                )
+                if result["status"] not in {"success", "task_failure"} or result.get(
+                    "cleanup_error"
+                ):
+                    break
+        finally:
+            batch.update(
+                spent_usd=budget.spent_usd,
+                uncertain_usd=budget.uncertain_usd,
+                finished_at=datetime.now(UTC).isoformat(),
+            )
+            write_json(args.output / "batch.json", batch)
+            summary = summarize(args.output)
+            write_json(args.output / "summary.json", summary)
+            print(json.dumps(summary, indent=2))
     return 0 if summary["evaluated"] == len(tasks) else 1
 
 
@@ -238,11 +279,17 @@ def main():
     check = commands.add_parser("preflight", help="Check local setup without a model call")
     check.add_argument("--check-access", action="store_true")
     check.add_argument("--provider", choices=API_KEY_NAMES, default="deepseek")
+    check.add_argument("--fallback-sol", action="store_true", help="Check both provider keys")
     manifest = commands.add_parser("manifest", help="Write a fixed 50-task pilot")
     manifest.add_argument("--output", type=Path, default=Path("experiments/tasks.json"))
     manifest.add_argument("--seed", type=int, default=42)
     baseline = commands.add_parser("run", help="Run tasks serially; model calls cost money")
     baseline.add_argument("--provider", choices=API_KEY_NAMES, default="deepseek")
+    baseline.add_argument(
+        "--fallback-sol",
+        action="store_true",
+        help="Switch to Sol after invalid DeepSeek action output",
+    )
     baseline.add_argument("--manifest", type=Path, default=Path("experiments/smoke.json"))
     baseline.add_argument("--output", type=Path, required=True)
     baseline.add_argument("--budget-usd", type=float, required=True)
@@ -254,7 +301,7 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "preflight":
-            return preflight(args.check_access, args.provider)
+            return preflight(args.check_access, args.provider, args.fallback_sol)
         if args.command == "manifest":
             if args.output.exists():
                 raise ValueError("Manifest already exists. Use a new output path.")
