@@ -112,6 +112,33 @@ def test_timeout_retains_reserve_without_retry_or_error_body(provider):
     assert "private provider data" not in str(caught.value.record)
 
 
+@pytest.mark.parametrize(
+    "code,expected",
+    [
+        ("rate_limit_exceeded", "rate_limit_exceeded"),
+        ("insufficient_quota", "insufficient_quota"),
+        ("private error text", None),
+        ({"secret": "private provider data"}, None),
+    ],
+)
+def test_error_diagnostics_keep_only_known_machine_codes(provider, code, expected):
+    client, create, _ = provider
+    error = RuntimeError("private provider data")
+    error.code = code
+    error.status_code = 429
+    create.side_effect = error
+
+    with pytest.raises(ProviderError) as caught:
+        client.complete([{"role": "user", "content": "JSON"}])
+
+    assert caught.value.record["error_code"] == expected
+    assert caught.value.record["status_code"] == 429
+    assert caught.value.record["cost_uncertain"] is True
+    assert client.budget.spent_usd == pytest.approx(6.53)
+    assert "private provider data" not in str(caught.value.record)
+    assert "private error text" not in str(caught.value.record)
+
+
 @pytest.mark.parametrize("tier", [None, "priority"])
 def test_unknown_processing_price_retains_reserve(provider, tier):
     client, create, _ = provider

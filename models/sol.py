@@ -142,9 +142,18 @@ class SolClient:
                 stream=False,
             )
         except Exception as error:  # noqa: BLE001 - Never expose a provider error body.
+            code = getattr(error, "code", None)
+            if not isinstance(code, str) or code not in {
+                "rate_limit_exceeded",
+                "insufficient_quota",
+                "billing_hard_limit_reached",
+                "billing_not_active",
+            }:
+                code = None
             raise ProviderError(
                 {
                     "error_type": type(error).__name__,
+                    "error_code": code,
                     "status_code": getattr(error, "status_code", None),
                     "cost_usd": reserve,
                     "cost_uncertain": True,
