@@ -1,4 +1,4 @@
-"""DeepSeek calls with fixed settings and conservative cost accounting."""
+"""Sol calls with fixed settings and Standard pricing."""
 
 from math import isfinite
 from time import perf_counter
@@ -6,20 +6,16 @@ from typing import Any
 
 from openai import OpenAI
 
-from models.common import Budget as Budget
-from models.common import BudgetExceeded as BudgetExceeded
-from models.common import Completion as Completion
-from models.common import ProviderError as ProviderError
-from models.common import TokenUsage as TokenUsage
+from models.common import Budget, Completion, ProviderError, TokenUsage
 
-MODEL = "deepseek-flash"
-CONTEXT_TOKENS = 1_048_576
-MAX_OUTPUT_TOKENS = 393_216
-# Peak rates from the official pricing page, checked on 2026-10-05.
-INPUT_USD_PER_MILLION = 0.30
-CACHED_USD_PER_MILLION = 0.006
-OUTPUT_USD_PER_MILLION = 1.20
-PRICING_URL = "https://api-docs.deepseek.com/quick_start/pricing/"
+MODEL = "gpt-6.1-sol"
+MAX_INPUT_TOKENS = 922_000
+MAX_OUTPUT_TOKENS = 128_000
+LONG_CONTEXT_THRESHOLD = 272_000
+PRICING_URL = "https://developers.openai.com/api/docs/pricing"
+# Standard rates per million tokens, checked on 2026-10-06.
+SHORT_RATES = {"input": 2.0, "cache_hit": 0.10, "cache_write": 2.50, "output": 10.0}
+LONG_RATES = {"input": 4.0, "cache_hit": 0.20, "cache_write": 5.0, "output": 15.0}
 
 
 def _count(value: Any) -> int:
@@ -29,34 +25,49 @@ def _count(value: Any) -> int:
 
 
 def parse_usage(raw: dict[str, Any]) -> TokenUsage:
-    """Read provider counts without adding reasoning tokens a second time."""
+    """Keep cache reads and writes separate; reasoning is part of output."""
     input_tokens = _count(raw.get("prompt_tokens"))
     output_tokens = _count(raw.get("completion_tokens"))
-    input_details = raw.get("prompt_tokens_details") or {}
-    output_details = raw.get("completion_tokens_details") or {}
-    cached = raw.get("prompt_cache_hit_tokens", input_details.get("cached_tokens", 0))
-    cache_hit_tokens = _count(cached)
-    cache_miss_tokens = _count(raw.get("prompt_cache_miss_tokens", input_tokens - cache_hit_tokens))
-    if cache_hit_tokens + cache_miss_tokens != input_tokens:
-        raise ValueError("Cache counts do not match the input token count.")
-    reasoning = output_details.get("reasoning_tokens")
+    total = raw.get("total_tokens")
+    if total is not None and _count(total) != input_tokens + output_tokens:
+        raise ValueError("Total tokens do not match input and output.")
+    details = raw.get("prompt_tokens_details") or {}
+    cached = details.get("cached_tokens")
+    hits = 0 if cached is None else _count(cached)
+    misses = input_tokens - hits
+    if misses < 0:
+        raise ValueError("Cache hits exceed the input token count.")
+    writes = details.get("cache_write_tokens")
+    if writes is not None:
+        writes = _count(writes)
+        if writes > misses:
+            raise ValueError("Cache writes exceed input tokens that missed the cache.")
+    reasoning = (raw.get("completion_tokens_details") or {}).get("reasoning_tokens")
     if reasoning is not None:
         reasoning = _count(reasoning)
         if reasoning > output_tokens:
-            raise ValueError("Reasoning token count exceeds the output token count.")
-    return TokenUsage(input_tokens, output_tokens, cache_hit_tokens, cache_miss_tokens, reasoning)
+            raise ValueError("Reasoning tokens exceed the output token count.")
+    if input_tokens > MAX_INPUT_TOKENS or output_tokens > MAX_OUTPUT_TOKENS:
+        raise ValueError("Provider usage exceeds the model limits.")
+    return TokenUsage(input_tokens, output_tokens, hits, misses, reasoning, writes)
 
 
 def estimate_cost(usage: TokenUsage) -> float:
-    """Use peak rates; the account's actual charge can be lower."""
+    """Charge all cache misses as writes when their split is not reported."""
+    rates = LONG_RATES if usage.input_tokens > LONG_CONTEXT_THRESHOLD else SHORT_RATES
+    writes = usage.cache_write_tokens
+    if writes is None:
+        writes = usage.cache_miss_tokens
+    ordinary = usage.cache_miss_tokens - writes
     return (
-        usage.cache_miss_tokens * INPUT_USD_PER_MILLION
-        + usage.cache_hit_tokens * CACHED_USD_PER_MILLION
-        + usage.output_tokens * OUTPUT_USD_PER_MILLION
+        ordinary * rates["input"]
+        + usage.cache_hit_tokens * rates["cache_hit"]
+        + writes * rates["cache_write"]
+        + usage.output_tokens * rates["output"]
     ) / 1_000_000
 
 
-class DeepSeekClient:
+class SolClient:
     def __init__(
         self,
         api_key: str,
@@ -65,7 +76,7 @@ class DeepSeekClient:
         timeout_seconds: float = 120,
     ):
         if not api_key or not api_key.strip():
-            raise ValueError("DEEPSEEK_API_KEY is required.")
+            raise ValueError("OPENAI_API_KEY is required.")
         if type(max_output_tokens) is not int or not 1 <= max_output_tokens <= MAX_OUTPUT_TOKENS:
             raise ValueError(f"Output limit must be between 1 and {MAX_OUTPUT_TOKENS}.")
         if not isfinite(timeout_seconds) or timeout_seconds <= 0:
@@ -75,38 +86,36 @@ class DeepSeekClient:
         self.timeout_seconds = timeout_seconds
         self.client = OpenAI(
             api_key=api_key,
-            base_url="https://api.deepseek.com",
+            base_url="https://api.openai.com/v1",
             timeout=timeout_seconds,
             max_retries=0,
         )
 
     @property
     def request_reserve_usd(self) -> float:
-        # Billed output can exceed the requested token limit. Reserve the full
-        # model limits so no tokenizer estimate or small overrun can undercount.
+        # Reserve the full model limits at the highest Standard token rates.
         return (
-            CONTEXT_TOKENS * INPUT_USD_PER_MILLION + MAX_OUTPUT_TOKENS * OUTPUT_USD_PER_MILLION
+            MAX_INPUT_TOKENS * LONG_RATES["cache_write"] + MAX_OUTPUT_TOKENS * LONG_RATES["output"]
         ) / 1_000_000
 
     @property
     def config(self) -> dict[str, Any]:
         return {
             "model": MODEL,
-            "base_url": "https://api.deepseek.com",
-            "thinking": "enabled",
+            "base_url": "https://api.openai.com/v1",
             "reasoning_effort": "high",
-            "top_p": 1.0,
-            "temperature": "ignored by provider in thinking mode",
             "max_output_tokens": self.max_output_tokens,
             "timeout_seconds": self.timeout_seconds,
             "response_format": "json_object",
+            "service_tier": "default",
+            "store": False,
             "max_retries": 0,
-            "pricing_basis": "peak rates; conservative estimate",
-            "pricing_checked": "2026-10-05",
+            "pricing_basis": "Standard; if cache-write counts are unknown, price all cache misses as writes",
+            "pricing_checked": "2026-10-06",
             "pricing_url": PRICING_URL,
-            "input_usd_per_million": INPUT_USD_PER_MILLION,
-            "cached_input_usd_per_million": CACHED_USD_PER_MILLION,
-            "output_usd_per_million": OUTPUT_USD_PER_MILLION,
+            "short_context_rates_per_million": SHORT_RATES.copy(),
+            "long_context_rates_per_million": LONG_RATES.copy(),
+            "long_context_threshold": LONG_CONTEXT_THRESHOLD,
             "request_reserve_usd": self.request_reserve_usd,
         }
 
@@ -125,23 +134,23 @@ class DeepSeekClient:
             response = self.client.chat.completions.create(
                 model=MODEL,
                 messages=messages,
-                max_tokens=self.max_output_tokens,
+                max_completion_tokens=self.max_output_tokens,
                 reasoning_effort="high",
-                top_p=1.0,
-                extra_body={"thinking": {"type": "enabled"}},
                 response_format={"type": "json_object"},
+                service_tier="default",
+                store=False,
                 stream=False,
             )
         except Exception as error:  # noqa: BLE001 - Never expose a provider error body.
-            # Error bodies can contain request data. Store only type and status.
-            record = {
-                "error_type": type(error).__name__,
-                "status_code": getattr(error, "status_code", None),
-                "cost_usd": reserve,
-                "cost_uncertain": True,
-                "latency_seconds": perf_counter() - start,
-            }
-            raise ProviderError(record) from None
+            raise ProviderError(
+                {
+                    "error_type": type(error).__name__,
+                    "status_code": getattr(error, "status_code", None),
+                    "cost_usd": reserve,
+                    "cost_uncertain": True,
+                    "latency_seconds": perf_counter() - start,
+                }
+            ) from None
 
         latency = perf_counter() - start
         raw: dict[str, Any] = {}
@@ -149,12 +158,12 @@ class DeepSeekClient:
         cost_uncertain = True
         try:
             raw = response.model_dump(mode="json")
+            if raw.get("service_tier") != "default":
+                raise ValueError("Response does not confirm Standard processing.")
             usage = parse_usage(raw["usage"])
             cost = estimate_cost(usage)
             self.budget.settle(reserve, cost)
             cost_uncertain = False
-            if usage.input_tokens > CONTEXT_TOKENS or usage.output_tokens > MAX_OUTPUT_TOKENS:
-                raise ValueError("Provider usage exceeds the model limits.")
             choice = raw["choices"][0]
             content = choice["message"].get("content") or ""
             finish_reason = choice["finish_reason"]
