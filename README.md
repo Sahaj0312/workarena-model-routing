@@ -1,9 +1,9 @@
 # WorkArena model routing
 
 Measure whether a cheap browser agent can complete enterprise tasks at low cost.
-The first step is a DeepSeek baseline on official WorkArena instances. A later
-step will run a stronger model on the same task IDs and seeds, then compare
-outcomes and costs. There is no router or training pipeline yet.
+Run DeepSeek Flash and GPT-6.1 Sol on official WorkArena instances with the same
+agent, task IDs, and seeds, then compare outcomes and costs. There is no router
+or training pipeline yet.
 
 ## Setup
 
@@ -21,9 +21,10 @@ with your Hugging Face account. Add these values to `.env` in this directory:
 ```dotenv
 HF_TOKEN=your_read_token
 DEEPSEEK_API_KEY=your_api_key
+OPENAI_API_KEY=your_api_key
 ```
 
-The DeepSeek account needs credit. An OpenAI key is not needed for this baseline.
+The selected provider account needs credit. Only that provider's API key is required.
 Remove old `SNOW_INSTANCE_URL`, `SNOW_INSTANCE_UNAME`, `SNOW_INSTANCE_PWD`, and
 `SNOW_INSTANCE_POOL` settings when using the official managed pool. See the
 [WorkArena setup guide](https://github.com/ServiceNow/WorkArena#getting-started).
@@ -52,6 +53,19 @@ uv run workarena-baseline run --manifest experiments/tasks.json --output results
 uv run workarena-baseline summary results/deepseek
 ```
 
+Use `--provider sol` for GPT-6.1 Sol. For example, these separate caps keep smoke
+and pilot estimates within $50 in total:
+
+```sh
+uv run workarena-baseline preflight --provider sol --check-access
+uv run workarena-baseline run --provider sol --manifest experiments/smoke.json --output results/sol-smoke --budget-usd 10
+uv run workarena-baseline run --provider sol --manifest experiments/tasks.json --output results/sol --budget-usd 40
+uv run workarena-baseline summary results/sol
+```
+
+Inspect the smoke results before running the pilot. A budget stop can leave
+tasks unfinished. The default provider is `deepseek`.
+
 Use a new output directory for each batch. Keep the checked-in manifests fixed
 for later model comparisons. The pilot has 50 task/seed pairs: 25 L1 tasks and
 25 L2 tasks, sampled across categories. It is a pilot, not a full WorkArena
@@ -69,7 +83,7 @@ V2 clarifies the common action prompt with explicit JSON argument types, limits,
 and complete examples. The parser, failure rules, model settings, task pairs,
 and run limits are unchanged. Invalid action formats count as task failures for
 both models. There is no format repair or retry. Keep V1 and V2 results separate,
-and use the same V2 prompt for the later stronger-model comparison.
+and use the same V2 prompt for both provider baselines.
 
 The agent receives text observations from the browser accessibility tree and
 keeps the full text history. It does not send screenshots. It selects one
@@ -82,21 +96,26 @@ call, and 600 seconds per task. The task timeout is a soft limit, checked betwee
 calls. It cannot cut off stalled setup or a browser or model call already in
 progress. The model request has a separate 120-second timeout.
 
-The model ID is `deepseek-flash`, which names DeepSeek V4.1 Flash as of
-2026-10-05. Thinking is enabled with high reasoning effort. The provider can
-change this alias. Raw responses preserve the model ID and fingerprint when
-the provider supplies them; they do not guarantee a fixed model snapshot.
+The model IDs are `deepseek-flash` and `gpt-6.1-sol`. DeepSeek Flash names V4.1
+Flash as of 2026-10-05. Both use high reasoning effort, JSON output, and the
+same text history and action prompt. Sol uses Standard processing. Providers
+can change aliases. Raw responses preserve model IDs and fingerprints when
+supplied; they do not guarantee a fixed model snapshot.
 
 Each task saves a `trace.jsonl` file and a `run.json` result. The trace includes
 observations, model responses, actions, usage, and errors. The batch also saves
-its settings. API cost is an estimate, not an invoice. The runner uses peak
-rates and reserves $0.786432 before each call, based on the full context and
-model output limits. This covers billed tokens beyond the requested output
-cap. If a call might have been
-billed but its usage is unknown, that reserve stays charged to the local budget.
+its settings. API cost is an estimate, not an invoice. DeepSeek uses peak rates
+and reserves $0.786432 before each call. Sol uses Standard rates and reserves
+$6.53, based on its maximum input and output at long-context cache-write rates.
+These reserves cover the model limits, not only the requested output cap. If
+a call might have been billed but its usage is unknown, its reserve stays
+charged to the local budget. Sol uses the full long-context rate above 272,000
+input tokens. If cache-write counts are absent, it prices all cache misses as
+writes. Cache-write prices replace ordinary input prices; they are not added.
 The runner can therefore stop with unused credit in the provider account.
 The budget applies to one batch; it does not include other processes or earlier
-batches. See [DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing/).
+batches. See [DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing/)
+and [OpenAI pricing](https://developers.openai.com/api/docs/pricing).
 
 Matching task IDs and seeds fixes the sampled task configuration. It does not
 freeze the managed service: hosts, generated record IDs, and live data can

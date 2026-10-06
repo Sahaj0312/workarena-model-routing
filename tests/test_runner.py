@@ -169,6 +169,14 @@ def test_missing_reasoning_usage_is_unknown(tmp_path):
     assert result["reasoning_tokens"] is None
 
 
+def test_missing_cache_write_counts_remain_unknown_after_later_known_usage(tmp_path):
+    first = completion()
+    second = replace(completion("stop", []), usage=TokenUsage(100, 20, 0, 100, 5, 50))
+    env = FakeEnv((observation(), 0, False, False, {}))
+    result, _ = run(tmp_path, FakeClient(first, second), env)
+    assert result["cache_write_tokens"] is None
+
+
 def test_length_response_is_task_failure_with_all_usage_saved(tmp_path):
     response = replace(
         completion(),

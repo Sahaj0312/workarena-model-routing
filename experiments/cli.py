@@ -16,6 +16,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
+API_KEY_NAMES = {"deepseek": "DEEPSEEK_API_KEY", "sol": "OPENAI_API_KEY"}
 
 
 def write_json(path, value):
@@ -98,14 +99,14 @@ def create_manifest(seed):
     }
 
 
-def preflight(check_access):
+def preflight(check_access, provider="deepseek"):
     import browsergym.workarena  # noqa: F401
     from playwright.sync_api import sync_playwright
 
     checks = {
         "versions": versions(),
         "HF_TOKEN": bool(os.getenv("HF_TOKEN")),
-        "DEEPSEEK_API_KEY": bool(os.getenv("DEEPSEEK_API_KEY")),
+        API_KEY_NAMES[provider]: bool(os.getenv(API_KEY_NAMES[provider])),
     }
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
@@ -137,6 +138,9 @@ def summarize(path):
         "cost_usd": cost,
         "average_cost_usd": cost / len(runs) if runs else None,
         "cost_per_success_usd": cost / successes if successes else None,
+        "cache_write_tokens": sum(r["cache_write_tokens"] for r in runs)
+        if all(r.get("cache_write_tokens") is not None for r in runs)
+        else None,
         **{
             key: sum(r[key] for r in runs)
             for key in (
@@ -157,7 +161,16 @@ def summarize(path):
 
 def run(args):
     from agent.runner import INSTANCE_POLICY, run_task
-    from models.deepseek import Budget, DeepSeekClient
+    from models.common import Budget
+
+    if args.provider == "sol":
+        from models.sol import SolClient
+
+        client_type = SolClient
+    else:
+        from models.deepseek import DeepSeekClient
+
+        client_type = DeepSeekClient
 
     if args.max_actions < 1 or not math.isfinite(args.timeout_seconds) or args.timeout_seconds <= 0:
         raise ValueError("Action and time limits must be positive.")
@@ -171,7 +184,7 @@ def run(args):
     if len({(t["task_id"], t["seed"]) for t in tasks}) != len(tasks):
         raise ValueError("The manifest has duplicate task and seed pairs.")
     budget = Budget(args.budget_usd)
-    client = DeepSeekClient(os.environ.get("DEEPSEEK_API_KEY", ""), budget)
+    client = client_type(os.environ.get(API_KEY_NAMES[args.provider], ""), budget)
     args.output.mkdir(parents=True, exist_ok=False)
     batch = {
         "started_at": datetime.now(UTC).isoformat(),
@@ -179,6 +192,7 @@ def run(args):
         "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "tasks": tasks,
         "model_config": client.config,
+        "provider": args.provider,
         "budget_usd": args.budget_usd,
         "max_actions": args.max_actions,
         "timeout_seconds": args.timeout_seconds,
@@ -223,10 +237,12 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("preflight", help="Check local setup without a model call")
     check.add_argument("--check-access", action="store_true")
+    check.add_argument("--provider", choices=API_KEY_NAMES, default="deepseek")
     manifest = commands.add_parser("manifest", help="Write a fixed 50-task pilot")
     manifest.add_argument("--output", type=Path, default=Path("experiments/tasks.json"))
     manifest.add_argument("--seed", type=int, default=42)
     baseline = commands.add_parser("run", help="Run tasks serially; model calls cost money")
+    baseline.add_argument("--provider", choices=API_KEY_NAMES, default="deepseek")
     baseline.add_argument("--manifest", type=Path, default=Path("experiments/smoke.json"))
     baseline.add_argument("--output", type=Path, required=True)
     baseline.add_argument("--budget-usd", type=float, required=True)
@@ -238,7 +254,7 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "preflight":
-            return preflight(args.check_access)
+            return preflight(args.check_access, args.provider)
         if args.command == "manifest":
             if args.output.exists():
                 raise ValueError("Manifest already exists. Use a new output path.")

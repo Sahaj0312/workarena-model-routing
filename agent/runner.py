@@ -8,7 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from agent.actions import ACTION_HELP, action_mapping, parse_action
-from models.deepseek import BudgetExceeded, ProviderError
+from models.common import BudgetExceeded, ProviderError
 
 SYSTEM_PROMPT = (
     """Complete the user's task in the browser.
@@ -155,6 +155,7 @@ def run_task(
         "output_tokens": 0,
         "cache_hit_tokens": 0,
         "cache_miss_tokens": 0,
+        "cache_write_tokens": 0,
         "reasoning_tokens": 0,
         "cost_usd": 0.0,
         "uncertain_cost_usd": 0.0,
@@ -202,7 +203,7 @@ def run_task(
                 result["cost_usd"] += response.cost_usd
                 result["model_latency_seconds"] += response.latency_seconds
                 for key, value in asdict(response.usage).items():
-                    if key == "reasoning_tokens" and value is None:
+                    if key in {"reasoning_tokens", "cache_write_tokens"} and value is None:
                         result[key] = None
                     elif key in result and value is not None and result[key] is not None:
                         result[key] += value
