@@ -106,7 +106,7 @@ Each task saves a `trace.jsonl` file and a `run.json` result. The trace includes
 observations, model responses, actions, usage, and errors. The batch also saves
 its settings. API cost is an estimate, not an invoice. DeepSeek uses peak rates
 and reserves $0.786432 before each call. Sol uses Standard rates and reserves
-$6.53, based on its maximum input and output at long-context cache-write rates.
+$6.53 to cover its input and output limits at the highest Standard rates.
 These reserves cover the model limits, not only the requested output cap. If
 a call might have been billed but its usage is unknown, its reserve stays
 charged to the local budget. Sol uses the full long-context rate above 272,000
