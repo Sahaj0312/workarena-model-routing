@@ -18,16 +18,28 @@ STRING_ARGS = {
 NO_ARGS = {"go_back", "go_forward", "noop", "stop"}
 
 ACTION_HELP = """Return one JSON object with exactly two keys: action and args.
-Use a browser element ID (bid) from the current tree, as a string.
-Available actions and arguments:
+action must be a JSON string. args must be a JSON array in the argument order below.
+Use exactly the required arguments. Do not add empty strings as placeholders.
+All arguments must be quoted JSON strings except for scroll and tab_focus.
+This includes browser element IDs (bids), even when they contain only digits.
+Use bids from the current accessibility tree.
+Available actions and argument order:
 click(bid), dblclick(bid), hover(bid), focus(bid), clear(bid)
 fill(bid, text), press(bid, key_comb), select_option(bid, option)
 scroll(delta_x, delta_y), tab_focus(index), go_back(), go_forward(), noop()
 send_msg_to_user(text): submit an answer when the task asks for one.
 report_infeasible(reason): report a task that cannot be done in this environment.
 stop(): end the attempt when you have finished or cannot continue.
-Example: {"action": "fill", "args": ["42", "hello"]}
-press uses keys such as Enter, Tab, or Control+a. Scroll values are pixels.
+scroll takes two finite JSON numbers, not strings. Each must be from -10000 to
+10000, inclusive. Values are pixels: horizontal delta first, then vertical delta.
+tab_focus takes one JSON integer from 0 to 255, inclusive, not a string or decimal.
+go_back, go_forward, noop, and stop take an empty args array: [].
+press uses key strings such as "Enter", "Tab", or "Control+a".
+Complete JSON examples:
+{"action": "fill", "args": ["42", "hello"]}
+{"action": "scroll", "args": [0, 600]}
+{"action": "tab_focus", "args": [0]}
+{"action": "stop", "args": []}
 Do not output code, Markdown, or more than one action."""
 
 

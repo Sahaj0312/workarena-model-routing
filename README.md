@@ -59,10 +59,17 @@ benchmark or a leaderboard result.
 
 ## Method and results
 
-The first pilot completed 13 of 50 tasks. Of its 37 failures, 30 were invalid
-actions under the fixed JSON interface. The shared-instance setup issue is
-fixed, and the full L2 subset was repeated. Action-format compatibility remains
-unresolved, so this is not yet a clean baseline for model capability or routing.
+V1 completed 13 of 50 tasks. Of its 37 failures, 30 were invalid actions under
+the fixed JSON interface. These results use the original L1 runs and the full
+L2 subset repeated after the shared-instance fix. The earlier L2 runs are
+excluded. These results measure the model, provider, and harness together;
+they do not isolate model capability.
+
+V2 clarifies the common action prompt with explicit JSON argument types, limits,
+and complete examples. The parser, failure rules, model settings, task pairs,
+and run limits are unchanged. Invalid action formats count as task failures for
+both models. There is no format repair or retry. Keep V1 and V2 results separate,
+and use the same V2 prompt for the later stronger-model comparison.
 
 The agent receives text observations from the browser accessibility tree and
 keeps the full text history. It does not send screenshots. It selects one

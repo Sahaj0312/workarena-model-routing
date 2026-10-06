@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from agent.actions import parse_action
+from agent.actions import ACTION_HELP, parse_action
 
 
 @pytest.mark.parametrize(
@@ -16,7 +16,10 @@ from agent.actions import parse_action
         '{"action":"click","args":["42"],"code":"print(1)"}',
         '{"action":"scroll","args":[true,0]}',
         '{"action":"scroll","args":[NaN,0]}',
+        '{"action":"scroll","args":["0","600"]}',
         '{"action":"tab_focus","args":[-1]}',
+        '{"action":"tab_focus","args":[1.0]}',
+        '{"action":"tab_focus","args":["1"]}',
         '{"action":"fill","args":["42"]}',
     ],
 )
@@ -39,3 +42,13 @@ def test_text_that_looks_like_code_remains_one_literal_argument():
 
 def test_stop_has_no_browser_code():
     assert parse_action('{"action":"stop","args":[]}') is None
+
+
+def test_prompt_examples_match_the_action_contract():
+    examples = [line for line in ACTION_HELP.splitlines() if line.startswith('{"action"')]
+    assert [parse_action(example) for example in examples] == [
+        "fill('42', 'hello')",
+        "scroll(0, 600)",
+        "tab_focus(0)",
+        None,
+    ]
