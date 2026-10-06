@@ -1,0 +1,313 @@
+{
+  "schema_version": 1,
+  "selection_seed": 42,
+  "description": "Pilot: 25 L1 and 25 L2 tasks. Not the canonical benchmark distribution.",
+  "versions": {
+    "browsergym-workarena": "0.5.3",
+    "browsergym-core": "0.14.3",
+    "playwright": "1.44.0",
+    "openai": "2.54.0"
+  },
+  "tasks": [
+    {
+      "task_id": "workarena.servicenow.multi-chart-min-max-retrieval",
+      "seed": 714,
+      "level": "l1",
+      "category": "dashboard"
+    },
+    {
+      "task_id": "workarena.servicenow.create-change-request",
+      "seed": 432,
+      "level": "l1",
+      "category": "form"
+    },
+    {
+      "task_id": "workarena.servicenow.knowledge-base-search",
+      "seed": 348,
+      "level": "l1",
+      "category": "knowledge"
+    },
+    {
+      "task_id": "workarena.servicenow.filter-change-request-list",
+      "seed": 284,
+      "level": "l1",
+      "category": "list-filter"
+    },
+    {
+      "task_id": "workarena.servicenow.sort-change-request-list",
+      "seed": 159,
+      "level": "l1",
+      "category": "list-sort"
+    },
+    {
+      "task_id": "workarena.servicenow.all-menu",
+      "seed": 220,
+      "level": "l1",
+      "category": "menu"
+    },
+    {
+      "task_id": "workarena.servicenow.order-development-laptop-p-c",
+      "seed": 980,
+      "level": "l1",
+      "category": "service catalog"
+    },
+    {
+      "task_id": "workarena.servicenow.single-chart-value-retrieval",
+      "seed": 781,
+      "level": "l1",
+      "category": "dashboard"
+    },
+    {
+      "task_id": "workarena.servicenow.create-incident",
+      "seed": 344,
+      "level": "l1",
+      "category": "form"
+    },
+    {
+      "task_id": "workarena.servicenow.filter-asset-list",
+      "seed": 104,
+      "level": "l1",
+      "category": "list-filter"
+    },
+    {
+      "task_id": "workarena.servicenow.sort-incident-list",
+      "seed": 94,
+      "level": "l1",
+      "category": "list-sort"
+    },
+    {
+      "task_id": "workarena.servicenow.impersonation",
+      "seed": 389,
+      "level": "l1",
+      "category": "menu"
+    },
+    {
+      "task_id": "workarena.servicenow.order-standard-laptop",
+      "seed": 99,
+      "level": "l1",
+      "category": "service catalog"
+    },
+    {
+      "task_id": "workarena.servicenow.single-chart-min-max-retrieval",
+      "seed": 367,
+      "level": "l1",
+      "category": "dashboard"
+    },
+    {
+      "task_id": "workarena.servicenow.create-user",
+      "seed": 867,
+      "level": "l1",
+      "category": "form"
+    },
+    {
+      "task_id": "workarena.servicenow.filter-service-catalog-item-list",
+      "seed": 352,
+      "level": "l1",
+      "category": "list-filter"
+    },
+    {
+      "task_id": "workarena.servicenow.sort-hardware-list",
+      "seed": 618,
+      "level": "l1",
+      "category": "list-sort"
+    },
+    {
+      "task_id": "workarena.servicenow.order-ipad-mini",
+      "seed": 270,
+      "level": "l1",
+      "category": "service catalog"
+    },
+    {
+      "task_id": "workarena.servicenow.multi-chart-value-retrieval",
+      "seed": 826,
+      "level": "l1",
+      "category": "dashboard"
+    },
+    {
+      "task_id": "workarena.servicenow.create-problem",
+      "seed": 44,
+      "level": "l1",
+      "category": "form"
+    },
+    {
+      "task_id": "workarena.servicenow.filter-hardware-list",
+      "seed": 747,
+      "level": "l1",
+      "category": "list-filter"
+    },
+    {
+      "task_id": "workarena.servicenow.sort-asset-list",
+      "seed": 470,
+      "level": "l1",
+      "category": "list-sort"
+    },
+    {
+      "task_id": "workarena.servicenow.order-loaner-laptop",
+      "seed": 549,
+      "level": "l1",
+      "category": "service catalog"
+    },
+    {
+      "task_id": "workarena.servicenow.create-hardware-asset",
+      "seed": 127,
+      "level": "l1",
+      "category": "form"
+    },
+    {
+      "task_id": "workarena.servicenow.filter-user-list",
+      "seed": 996,
+      "level": "l1",
+      "category": "list-filter"
+    },
+    {
+      "task_id": "workarena.servicenow.infeasible-navigate-and-sort-asset-list-l2",
+      "seed": 661,
+      "level": "l2",
+      "category": "contextual_understanding_infeasible_tasks"
+    },
+    {
+      "task_id": "workarena.servicenow.infeasible-navigate-and-create-problem-l2",
+      "seed": 130,
+      "level": "l2",
+      "category": "contextual_understanding_infeasible_tasks"
+    },
+    {
+      "task_id": "workarena.servicenow.infeasible-navigate-and-order-ipad-mini-l2",
+      "seed": 308,
+      "level": "l2",
+      "category": "contextual_understanding_infeasible_tasks"
+    },
+    {
+      "task_id": "workarena.servicenow.infeasible-navigate-and-order-standard-laptop-l2",
+      "seed": 663,
+      "level": "l2",
+      "category": "contextual_understanding_infeasible_tasks"
+    },
+    {
+      "task_id": "workarena.servicenow.infeasible-navigate-and-filter-hardware-list-with-reason-l2",
+      "seed": 661,
+      "level": "l2",
+      "category": "contextual_understanding_infeasible_tasks"
+    },
+    {
+      "task_id": "workarena.servicenow.filter-single-item-uniform-expenses-find-total-return-and-select-investments-medium-l2",
+      "seed": 121,
+      "level": "l2",
+      "category": "data_driven_decision_making_and_reasoning"
+    },
+    {
+      "task_id": "workarena.servicenow.basic-expense-management-medium-l2",
+      "seed": 121,
+      "level": "l2",
+      "category": "data_driven_decision_making_and_reasoning"
+    },
+    {
+      "task_id": "workarena.servicenow.amount-based-expense-management-small-l2",
+      "seed": 121,
+      "level": "l2",
+      "category": "data_driven_decision_making_and_reasoning"
+    },
+    {
+      "task_id": "workarena.servicenow.filter-single-item-uniform-expenses-and-delete-wrong-investments-small-l2",
+      "seed": 121,
+      "level": "l2",
+      "category": "data_driven_decision_making_and_reasoning"
+    },
+    {
+      "task_id": "workarena.servicenow.dashboard-retrieve-incident-and-median-create-problem-l2",
+      "seed": 121,
+      "level": "l2",
+      "category": "data_driven_decision_making_and_reasoning"
+    },
+    {
+      "task_id": "workarena.servicenow.get-warranty-expiration-date-l2",
+      "seed": 20,
+      "level": "l2",
+      "category": "information_retrieval"
+    },
+    {
+      "task_id": "workarena.servicenow.dashboard-retrieve-incident-and-max-request-apple-watch-l2",
+      "seed": 270,
+      "level": "l2",
+      "category": "information_retrieval"
+    },
+    {
+      "task_id": "workarena.servicenow.dashboard-retrieve-catalog-and-max-order-standard-laptop-l2",
+      "seed": 270,
+      "level": "l2",
+      "category": "information_retrieval"
+    },
+    {
+      "task_id": "workarena.servicenow.get-warranty-expiration-date-l2",
+      "seed": 700,
+      "level": "l2",
+      "category": "information_retrieval"
+    },
+    {
+      "task_id": "workarena.servicenow.dashboard-retrieve-incident-and-max-request-apple-ipad3-l2",
+      "seed": 614,
+      "level": "l2",
+      "category": "information_retrieval"
+    },
+    {
+      "task_id": "workarena.servicenow.high-priority-filter-problems-and-mark-duplicates-large-l2",
+      "seed": 102,
+      "level": "l2",
+      "category": "planning_and_problem_solving"
+    },
+    {
+      "task_id": "workarena.servicenow.three-changes-fix-basic-varied-risk-change-request-scheduling-l2",
+      "seed": 435,
+      "level": "l2",
+      "category": "planning_and_problem_solving"
+    },
+    {
+      "task_id": "workarena.servicenow.priority-assignment-small-l2",
+      "seed": 435,
+      "level": "l2",
+      "category": "planning_and_problem_solving"
+    },
+    {
+      "task_id": "workarena.servicenow.two-changes-fix-tight-priority-varied-risk-change-request-scheduling-l2",
+      "seed": 102,
+      "level": "l2",
+      "category": "planning_and_problem_solving"
+    },
+    {
+      "task_id": "workarena.servicenow.workload-balancing-medium-l2",
+      "seed": 102,
+      "level": "l2",
+      "category": "planning_and_problem_solving"
+    },
+    {
+      "task_id": "workarena.servicenow.navigate-and-order-standard-laptop-l2",
+      "seed": 99,
+      "level": "l2",
+      "category": "sophisticated_memory"
+    },
+    {
+      "task_id": "workarena.servicenow.navigate-and-filter-change-request-list-l2",
+      "seed": 458,
+      "level": "l2",
+      "category": "sophisticated_memory"
+    },
+    {
+      "task_id": "workarena.servicenow.navigate-and-order-sales-laptop-l2",
+      "seed": 214,
+      "level": "l2",
+      "category": "sophisticated_memory"
+    },
+    {
+      "task_id": "workarena.servicenow.navigate-and-filter-incident-list-l2",
+      "seed": 330,
+      "level": "l2",
+      "category": "sophisticated_memory"
+    },
+    {
+      "task_id": "workarena.servicenow.on-board-user-l2",
+      "seed": 214,
+      "level": "l2",
+      "category": "sophisticated_memory"
+    }
+  ]
+}

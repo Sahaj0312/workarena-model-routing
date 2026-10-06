@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "selection_seed": 42,
+  "description": "Three L1 integration smoke tasks. Not a success-rate estimate.",
+  "versions": {
+    "browsergym-workarena": "0.5.3",
+    "browsergym-core": "0.14.3",
+    "playwright": "1.44.0",
+    "openai": "2.54.0"
+  },
+  "tasks": [
+    {
+      "task_id": "workarena.servicenow.all-menu",
+      "seed": 220,
+      "level": "l1",
+      "category": "menu"
+    },
+    {
+      "task_id": "workarena.servicenow.knowledge-base-search",
+      "seed": 348,
+      "level": "l1",
+      "category": "knowledge"
+    },
+    {
+      "task_id": "workarena.servicenow.order-development-laptop-p-c",
+      "seed": 980,
+      "level": "l1",
+      "category": "service catalog"
+    }
+  ]
+}
