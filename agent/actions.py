@@ -1,0 +1,76 @@
+"""Accept one browser action. Never execute model code."""
+
+import json
+import math
+
+STRING_ARGS = {
+    "click": 1,
+    "dblclick": 1,
+    "hover": 1,
+    "focus": 1,
+    "clear": 1,
+    "fill": 2,
+    "press": 2,
+    "select_option": 2,
+    "send_msg_to_user": 1,
+    "report_infeasible": 1,
+}
+NO_ARGS = {"go_back", "go_forward", "noop", "stop"}
+
+ACTION_HELP = """Return one JSON object with exactly two keys: action and args.
+Use a browser element ID (bid) from the current tree, as a string.
+Available actions and arguments:
+click(bid), dblclick(bid), hover(bid), focus(bid), clear(bid)
+fill(bid, text), press(bid, key_comb), select_option(bid, option)
+scroll(delta_x, delta_y), tab_focus(index), go_back(), go_forward(), noop()
+send_msg_to_user(text): submit an answer when the task asks for one.
+report_infeasible(reason): report a task that cannot be done in this environment.
+stop(): end the attempt when you have finished or cannot continue.
+Example: {"action": "fill", "args": ["42", "hello"]}
+press uses keys such as Enter, Tab, or Control+a. Scroll values are pixels.
+Do not output code, Markdown, or more than one action."""
+
+
+def parse_action(content: str) -> str | None:
+    """Return a literal-only BrowserGym call, or None for stop."""
+    try:
+        value = json.loads(content)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise ValueError("The action must be a JSON object.") from exc
+    if not isinstance(value, dict) or set(value) != {"action", "args"}:
+        raise ValueError("The action must contain only action and args.")
+    name, args = value["action"], value["args"]
+    if not isinstance(name, str) or not isinstance(args, list):
+        raise ValueError("action must be a string and args must be a list.")
+    if name in STRING_ARGS:
+        valid = len(args) == STRING_ARGS[name] and all(isinstance(x, str) for x in args)
+    elif name in NO_ARGS:
+        valid = not args
+    elif name == "scroll":
+        valid = len(args) == 2 and all(
+            type(x) in (int, float) and math.isfinite(x) and abs(x) <= 10000 for x in args
+        )
+    elif name == "tab_focus":
+        valid = len(args) == 1 and type(args[0]) is int and 0 <= args[0] <= 255
+    else:
+        raise ValueError("Unknown action.")
+    if not valid:
+        raise ValueError("Invalid action arguments.")
+    if name == "stop":
+        return None
+    return f"{name}({', '.join(repr(x) for x in args)})"
+
+
+def action_mapping():
+    """Build BrowserGym's restricted action set."""
+    from browsergym.core.action import functions
+    from browsergym.core.action.highlevel import HighLevelActionSet
+
+    names = sorted(set(STRING_ARGS) | (NO_ARGS - {"stop", "noop"}) | {"scroll", "tab_focus"})
+    return HighLevelActionSet(
+        subsets=["custom"],
+        custom_actions=[getattr(functions, name) for name in names],
+        multiaction=False,
+        strict=True,
+        retry_with_force=False,
+    ).to_python_code

@@ -1,2 +1,13 @@
 context.txt
 .env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+results/
+*.egg-info/
+dist/
+.DS_Store
